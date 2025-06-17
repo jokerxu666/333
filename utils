@@ -1,0 +1,175 @@
+import torch
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.metrics import confusion_matrix, precision_score, recall_score, f1_score, jaccard_score
+import seaborn as sns
+
+def dice_coefficient(pred, target):
+    """
+    计算 Dice 系数
+    pred: [B, C, H, W] 或 [B, C, H, W, D]
+    target: [B, C, H, W] 或 [B, C, H, W, D]
+    """
+    smooth = 1e-5
+    pred = torch.softmax(pred, dim=1)
+    pred = pred.argmax(dim=1)
+    target = target.argmax(dim=1)
+    
+    intersection = (pred * target).sum()
+    union = pred.sum() + target.sum()
+    
+    dice = (2. * intersection + smooth) / (union + smooth)
+    return dice
+
+def iou_score(pred, target, smooth=1.0):
+    """
+    计算IoU分数
+    pred: 预测值 (B, 1, H, W)
+    target: 真实值 (B, 1, H, W)
+    """
+    pred = pred.view(-1)
+    target = target.view(-1)
+    intersection = (pred * target).sum()
+    union = pred.sum() + target.sum() - intersection
+    return (intersection + smooth) / (union + smooth)
+
+def plot_confusion_matrix(y_true, y_pred, classes=None):
+    """
+    绘制混淆矩阵
+    y_true: 真实标签
+    y_pred: 预测标签
+    classes: 类别名称列表
+    """
+    cm = confusion_matrix(y_true, y_pred)
+    plt.figure(figsize=(8, 6))
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues')
+    plt.title('Confusion Matrix')
+    plt.ylabel('True Label')
+    plt.xlabel('Predicted Label')
+    if classes:
+        plt.xticks(np.arange(len(classes)) + 0.5, classes, rotation=45)
+        plt.yticks(np.arange(len(classes)) + 0.5, classes, rotation=0)
+    plt.tight_layout()
+    return plt
+
+def plot_training_curves(train_losses, val_losses, train_metrics, val_metrics, metric_name):
+    """
+    绘制训练曲线
+    train_losses: 训练损失列表
+    val_losses: 验证损失列表
+    train_metrics: 训练指标列表
+    val_metrics: 验证指标列表
+    metric_name: 指标名称
+    """
+    plt.figure(figsize=(12, 4))
+    
+    # 绘制损失曲线
+    plt.subplot(1, 2, 1)
+    plt.plot(train_losses, label='Train Loss')
+    plt.plot(val_losses, label='Val Loss')
+    plt.title('Loss Curves')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.legend()
+    
+    # 绘制指标曲线
+    plt.subplot(1, 2, 2)
+    plt.plot(train_metrics, label=f'Train {metric_name}')
+    plt.plot(val_metrics, label=f'Val {metric_name}')
+    plt.title(f'{metric_name} Curves')
+    plt.xlabel('Epoch')
+    plt.ylabel(metric_name)
+    plt.legend()
+    
+    plt.tight_layout()
+    return plt
+
+def visualize_prediction(image, mask, pred, save_path=None):
+    """
+    可视化预测结果
+    image: 原始图像 (H, W, C)
+    mask: 真实掩码 (H, W)
+    pred: 预测掩码 (H, W)
+    save_path: 保存路径
+    """
+    plt.figure(figsize=(15, 5))
+    
+    # 显示原始图像
+    plt.subplot(1, 3, 1)
+    plt.imshow(image)
+    plt.title('Original Image')
+    plt.axis('off')
+    
+    # 显示真实掩码
+    plt.subplot(1, 3, 2)
+    plt.imshow(mask, cmap='gray')
+    plt.title('Ground Truth')
+    plt.axis('off')
+    
+    # 显示预测掩码
+    plt.subplot(1, 3, 3)
+    plt.imshow(pred, cmap='gray')
+    plt.title('Prediction')
+    plt.axis('off')
+    
+    plt.tight_layout()
+    
+    if save_path:
+        plt.savefig(save_path)
+        plt.close()
+    else:
+        plt.show()
+
+def calculate_metrics(pred, target):
+    """
+    计算多个评估指标
+    pred: [N, C, H, W] 或 [N, C, H, W, D]
+    target: [N, C, H, W] 或 [N, C, H, W, D]
+    """
+    # 将预测转换为类别标签
+    pred = np.argmax(pred, axis=1)
+    target = np.argmax(target, axis=1)
+    
+    # 展平数组
+    pred = pred.reshape(-1)
+    target = target.reshape(-1)
+    
+    # 计算各项指标
+    metrics = {
+        'precision': precision_score(target, pred, average='weighted'),
+        'recall': recall_score(target, pred, average='weighted'),
+        'f1': f1_score(target, pred, average='weighted'),
+        'iou': jaccard_score(target, pred, average='weighted')
+    }
+    
+    return metrics
+
+def save_prediction(pred, save_path):
+    """
+    保存预测结果
+    pred: [H, W] 或 [H, W, D] 的 numpy 数组
+    save_path: 保存路径
+    """
+    import nibabel as nib
+    pred_nii = nib.Nifti1Image(pred, np.eye(4))
+    nib.save(pred_nii, save_path)
+
+def load_nifti(file_path):
+    """
+    加载 NIfTI 文件
+    file_path: NIfTI 文件路径
+    """
+    import nibabel as nib
+    nii = nib.load(file_path)
+    return nii.get_fdata(), nii.affine
+
+def normalize_image(image):
+    """
+    标准化图像
+    image: 输入图像
+    """
+    min_val = np.percentile(image, 1)
+    max_val = np.percentile(image, 99)
+    image = np.clip(image, min_val, max_val)
+    image = (image - min_val) / (max_val - min_val)
+    return image 
